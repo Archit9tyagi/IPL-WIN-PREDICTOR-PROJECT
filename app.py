@@ -4,146 +4,99 @@ import pandas as pd
 import numpy as np
 import os
 
-# ---------------------- PAGE CONFIG ----------------------
-st.set_page_config(
-    page_title="IPL Win Predictor",
-    page_icon="🏏",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+teams = ['Sunrisers Hyderabad',
+ 'Mumbai Indians',
+ 'Royal Challengers Bangalore',
+ 'Kolkata Knight Riders',
+ 'Kings XI Punjab',
+ 'Chennai Super Kings',
+ 'Rajasthan Royals',
+ 'Delhi Capitals']
 
-# ---------------------- CUSTOM CSS ----------------------
-page_bg = """
-<style>
-/* Background */
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-    color: white;
-}
+cities = ['Hyderabad', 'Bangalore', 'Mumbai', 'Indore', 'Kolkata', 'Delhi',
+       'Chandigarh', 'Jaipur', 'Chennai', 'Cape Town', 'Port Elizfabeth',
+       'Durban', 'Centurion', 'East London', 'Johannesburg', 'Kimberley',
+       'Bloemfontein', 'Ahmedabad', 'Cuttack', 'Nagpur', 'Dharamsala',
+       'Visakhapatnam', 'Pune', 'Raipur', 'Ranchi', 'Abu Dhabi',
+       'Sharjah', 'Mohali', 'Bengaluru']
 
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background: rgba(255,255,255,0.05);
-    backdrop-filter: blur(10px);
-}
-
-h1, h2, h3 {
-    font-weight: 800 !important;
-}
-
-.css-1d391kg {
-    color: white !important;
-}
-
-/* Cards */
-.card {
-    padding: 25px;
-    background: rgba(255, 255, 255, 0.10);
-    border-radius: 15px;
-    margin-bottom: 20px;
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.2);
-}
-
-input, select {
-    color: black !important;
-}
-</style>
-"""
-st.markdown(page_bg, unsafe_allow_html=True)
-
-# ---------------------- HEADER ----------------------
-st.markdown("<h1 style='text-align:center;'>🏏 IPL MATCH WIN PREDICTOR</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center; opacity:0.8;'>Powered by Machine Learning</h3><br>", unsafe_allow_html=True)
-
-# ---------------------- DATA ----------------------
-teams = sorted([
-    'Sunrisers Hyderabad','Mumbai Indians','Royal Challengers Bangalore',
-    'Kolkata Knight Riders','Kings XI Punjab','Chennai Super Kings',
-    'Rajasthan Royals','Delhi Capitals'
-])
-
-cities = sorted([
-    'Hyderabad','Bangalore','Mumbai','Indore','Kolkata','Delhi','Chandigarh','Jaipur',
-    'Chennai','Cape Town','Port Elizfabeth','Durban','Centurion','East London',
-    'Johannesburg','Kimberley','Bloemfontein','Ahmedabad','Cuttack','Nagpur','Dharamsala',
-    'Visakhapatnam','Pune','Raipur','Ranchi','Abu Dhabi','Sharjah','Mohali','Bengaluru'
-])
-
-# ---------------------- MODEL LOAD ----------------------
-pipe_path = "pipe.pkl"
-
+# Load model pipe safely
+pipe_path = 'pipe.pkl'
 if os.path.exists(pipe_path):
-    pipe = pickle.load(open(pipe_path, "rb"))
+    pipe = pickle.load(open(pipe_path, 'rb'))
 else:
     pipe = None
-    st.warning("⚠ Model file 'pipe.pkl' not found. Place it in the same folder.", icon="⚠")
+    st.warning(f"Model file not found at '{pipe_path}'. Prediction will not work until you place the file there.")
 
-# ---------------------- FUNCTION ----------------------
+st.title('IPL Win Predictor')
+
+col1, col2 = st.columns(2)
+
+with col1:
+    batting_team = st.selectbox('Select the batting team', sorted(teams))
+with col2:
+    bowling_team = st.selectbox('Select the bowling team', sorted(teams))
+
+selected_city = st.selectbox('Select host city', sorted(cities))
+
+target = st.number_input('Target', min_value=0, step=1, format="%d")
+
+col3, col4, col5 = st.columns(3)
+
+with col3:
+    score = st.number_input('Score', min_value=0, step=1, format="%d")
+with col4:
+    # Allow float like 10.3 (10 overs and 3 balls)
+    overs = st.number_input('Overs completed (e.g. 10 or 10.3 where .3 = 3 balls)', min_value=0.0, step=0.1, format="%.1f")
+with col5:
+    wickets_out = st.number_input('Wickets out', min_value=0, max_value=10, step=1, format="%d")
+
 def overs_to_balls(overs_float):
+    """
+    Convert overs (possibly decimal-like where fractional digit = balls) to total balls completed.
+    Examples:
+      10.0 -> 60
+      10.3 -> 63 (10 overs and 3 balls)
+    If fractional part looks >5 (invalid), it will be capped to 5.
+    """
     overs_int = int(overs_float)
-    frac = round((overs_float - overs_int) * 10)
+    frac = round((overs_float - overs_int) * 10)  # expects decimal like .3 means 3 balls
+    if frac < 0:
+        frac = 0
     if frac > 5:
+        # If user passed something like 10.7, cap to 5 and add warning later
         frac = 5
     return overs_int * 6 + frac
 
-# ---------------------- INPUT UI ----------------------
-with st.container():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Match Inputs")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        batting_team = st.selectbox("🏏 Batting Team", teams)
-    with col2:
-        bowling_team = st.selectbox("🎯 Bowling Team", teams)
-
-    selected_city = st.selectbox("📍 Host City", cities)
-
-    col3, col4 = st.columns(2)
-    with col3:
-        target = st.number_input("🎯 Target", min_value=0, step=1)
-    with col4:
-        score = st.number_input("🏃‍♂️ Current Score", min_value=0, step=1)
-
-    col5, col6 = st.columns(2)
-    with col5:
-        overs = st.number_input("⏳ Overs Completed (e.g. 10.3)", min_value=0.0, step=0.1, format="%.1f")
-    with col6:
-        wickets_out = st.number_input("💔 Wickets Fallen", min_value=0, max_value=10, step=1)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------------- PREDICTION BUTTON ----------------------
-predict_button = st.button("🔮 Predict Win Probability", use_container_width=True)
-
-# ---------------------- PREDICTION LOGIC ----------------------
-if predict_button:
-
+if st.button('Predict Probability'):
     if pipe is None:
-        st.error("❌ Model not loaded. Add 'pipe.pkl' next to app.py")
+        st.error("Model not loaded. Place 'pipe.pkl' next to this script and re-run.")
     else:
+        # Basic sanity checks
         if target <= 0:
-            st.error("Please enter a valid target (>0)")
+            st.error("Please enter a valid target (> 0).")
         else:
-            balls_done = overs_to_balls(overs)
-            balls_left = 120 - balls_done
-            
+            total_balls_completed = overs_to_balls(overs)
+            balls_left = 120 - total_balls_completed
             if balls_left <= 0:
-                st.error("❌ Overs exceed 20. Check your input.")
+                st.error("No balls left (overs indicate end of innings). Check the 'Overs completed' value.")
             else:
                 runs_left = target - score
-                wickets_left = 10 - wickets_out
+                wickets_left = 10 - int(wickets_out)
 
-                # CRR & RRR
-                overs_int = int(overs)
-                frac = round((overs - overs_int) * 10)
-                overs_fraction = overs_int + frac/6
+                # avoid divide by zero for C.R.R.
+                crr = 0.0
+                if overs > 0:
+                    # compute C.R.R. as runs per over (score / overs_completed)
+                    # if overs provided as decimal with balls, convert to overs fraction
+                    overs_int = int(overs)
+                    balls_frac = round((overs - overs_int) * 10)
+                    overs_completed_fraction = overs_int + balls_frac / 6.0
+                    if overs_completed_fraction > 0:
+                        crr = score / overs_completed_fraction
+                # required run rate
+                rrr = (runs_left * 6) / balls_left
 
-                crr = score / overs_fraction if overs_fraction > 0 else 0
-                rrr = (runs_left * 6) / balls_left if balls_left > 0 else 0
-
-                # DataFrame
                 input_df = pd.DataFrame({
                     'batting_team':[batting_team],
                     'bowling_team':[bowling_team],
@@ -156,24 +109,13 @@ if predict_button:
                     'rrr':[rrr]
                 })
 
-                # Predict
-                result = pipe.predict_proba(input_df)[0]
-                loss, win = result[0], result[1]
-
-                # ---------------------- RESULT CARD ----------------------
-                st.markdown("<br><div class='card'>", unsafe_allow_html=True)
-                st.subheader("📊 Win Probability")
-
-                colA, colB = st.columns(2)
-                with colA:
-                    st.metric(
-                        label=f"{batting_team} Win Chance",
-                        value=f"{round(win*100, 2)} %"
-                    )
-                with colB:
-                    st.metric(
-                        label=f"{bowling_team} Win Chance",
-                        value=f"{round(loss*100, 2)} %"
-                    )
-
-                st.markdown("</div>", unsafe_allow_html=True)
+                # predict_proba expects same pre-processing as training
+                try:
+                    result = pipe.predict_proba(input_df)
+                    loss = result[0][0]
+                    win = result[0][1]
+                    st.header(f"{batting_team} - {round(win*100, 2)}%")
+                    st.header(f"{bowling_team} - {round(loss*100, 2)}%")
+                except Exception as e:
+                    st.error("Prediction failed. Make sure your model pipeline accepts the input features in the same format.")
+                    st.exception(e)
